@@ -1,14 +1,24 @@
 import re, os, itertools, docx2txt
 from tqdm import tqdm
+#from nltk.tokenize import RegexpTokenizer
 from nltk.stem import WordNetLemmatizer
 from nltk import sent_tokenize, word_tokenize
 from spacy.lang.id import Indonesian
 from html import unescape
 from unidecode import unidecode
 import pandas as pd
+#from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
+#from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from nltk.tokenize import TweetTokenizer; Tokenizer = TweetTokenizer(reduce_len=True)
+#from nltk.corpus import wordnet as wn
 from nltk.stem import PorterStemmer;ps = PorterStemmer()
 from string import punctuation
+#from pattern.web import PDF
+from bz2 import BZ2File as bz2
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation as LDA
+import matplotlib.pyplot as plt
+import numpy as np
 from textblob import TextBlob 
 from NLP_Models import openewfile as of
 
@@ -18,6 +28,16 @@ def crawlFiles(dPath, types = None):
         return [dPath+'/'+f for f in os.listdir(dPath) if f.endswith('.'+types)]
     else:
         return [dPath+'/'+f for f in os.listdir(dPath)]
+
+def readBz2(file):
+    with bz2(file, "r") as bzData:
+        txt = []
+        for line in bzData:
+            try:
+                txt.append(line.strip().decode('utf-8','replace'))
+            except:
+                pass
+    return ' '.join(txt)
 
 def LoadDocuments(dPath=None,types=None, file = None): # types = ['pdf','doc','docx','txt','bz2']
     Files, Docs = [], []
@@ -192,6 +212,7 @@ def cleanText_(T, fix={}, min_charLen = 0):
         t[i] = ' '.join(cleanList).lstrip()
     return ' '.join(t) # Return kalimat lagi
 
+
 def handlingnegation (text):
     match = re.compile(r'(tidak|kurang|bukan|jangan|tapi|tetapi) (\w+)').findall(text)
     match = list(set(match))
@@ -201,9 +222,31 @@ def handlingnegation (text):
             text = kata
     return text
 
+def handlingporn (text):
+    match = re.compile(r'(video|foto|photo) (\w+)').findall(text)
+    match = list(set(match))
+    for i,word in enumerate(match): 
+        if ' '.join(match[i]) in text:
+            kata = text.replace(' '.join(match[i]), str(match[i][0])+' '+'pornx'+str(match[i][1]))
+            text = kata
+    return text
+
 def print_Topics(model, feature_names, Top_Topics, n_top_words):
     for topic_idx, topic in enumerate(model.components_[:Top_Topics]):
         print("Topic #%d:" %(topic_idx+1))
         print(" ".join([feature_names[i]
                         for i in topic.argsort()[:-n_top_words - 1:-1]]))
 
+def getTopics(Txt,n_topics=5, Top_Words=7):
+    #Txt = [t['nlp'] for t in Tweets] # cleaned: stopwords, stemming
+    tf_vectorizer = CountVectorizer(strip_accents = 'unicode', token_pattern = r'\b[a-zA-Z]{3,}\b', max_df = 0.95, min_df = 2)
+    dtm_tf = tf_vectorizer.fit_transform(Txt)
+    tf_terms = tf_vectorizer.get_feature_names()
+    lda_tf = LDA(n_components=n_topics, learning_method='online', random_state=0).fit(dtm_tf)   
+    vsm_topics = lda_tf.transform(dtm_tf); doc_topic =  [a.argmax()+1 for a in tqdm(vsm_topics)] # topic of docs
+    print('In total there are {0} major topics, distributed as follows'.format(len(set(doc_topic))))
+    fig4 = plt.figure(); fig4.add_subplot(111)
+    plt.hist(np.array(doc_topic), alpha=0.5); plt.show()
+    print('Printing top {0} Topics, with top {1} Words:'.format(n_topics, Top_Words))
+    print_Topics(lda_tf, tf_terms, n_topics, Top_Words)
+    return lda_tf, dtm_tf, tf_vectorizer
