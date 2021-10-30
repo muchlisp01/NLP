@@ -1,32 +1,62 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Oct 30 02:09:49 2021
-
-@author: muchl
-"""
-
-import re, os, itertools
+import re, os, itertools, docx2txt
 from tqdm import tqdm
-#from nltk.tokenize import RegexpTokenizer
 from nltk.stem import WordNetLemmatizer
 from nltk import sent_tokenize, word_tokenize
 from spacy.lang.id import Indonesian
 from html import unescape
 from unidecode import unidecode
 import pandas as pd
-#from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory
-#from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
 from nltk.tokenize import TweetTokenizer; Tokenizer = TweetTokenizer(reduce_len=True)
-#from nltk.corpus import wordnet as wn
 from nltk.stem import PorterStemmer;ps = PorterStemmer()
 from string import punctuation
-#from pattern.web import PDF
-from bz2 import BZ2File as bz2
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.decomposition import LatentDirichletAllocation as LDA
-import matplotlib.pyplot as plt
-import numpy as np
 from textblob import TextBlob 
+from NLP_Models import openewfile as of
+
+def crawlFiles(dPath, types = None):
+    #dPath = 'C:/Temp', types ='pdf'
+    if types:
+        return [dPath+'/'+f for f in os.listdir(dPath) if f.endswith('.'+types)]
+    else:
+        return [dPath+'/'+f for f in os.listdir(dPath)]
+
+def LoadDocuments(dPath=None,types=None, file = None): # types = ['pdf','doc','docx','txt','bz2']
+    Files, Docs = [], []
+    if types:
+        for tipe in types:
+            Files += crawlFiles(dPath,tipe)
+    if file:
+        Files = [file]
+    if not types and not file: # get all files regardless of their extensions
+        Files += crawlFiles(dPath)
+    for f in Files:
+#        if f[-3:].lower()=='pdf':
+#            try:
+#                Docs.append(PDF(f).string)
+#            except:
+#                print('error reading{0}'.format(f))
+        if f[-3:].lower()=='txt':
+            try:
+                df=open(f,"r",encoding="utf-8", errors='replace')
+                Docs.append(df.readlines());df.close()
+            except:
+                print('error reading{0}'.format(f))
+        elif f[-3:].lower()=='bz2':
+            try:
+                Docs.append(readBz2(f))
+            except:
+                print('error reading{0}'.format(f))
+        elif f[-4:].lower()=='docx':
+            try:
+                Docs.append(docx2txt.process(f))
+            except:
+                print('error reading{0}'.format(f))
+        elif f[-3:].lower()=='csv':
+            Docs.append(pd.read_csv(f))
+        else:
+            print('Unsupported format {0}'.format(f))
+    if file:
+        Docs = Docs[0]
+    return Docs, Files
 
 
 def LoadStopWords(lang, sentiment = True):
@@ -34,20 +64,20 @@ def LoadStopWords(lang, sentiment = True):
     if sentiment:
         if L == 'en' or L == 'english' or L == 'inggris':
             lemmatizer = WordNetLemmatizer()
-            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_en.txt'))[0]])
+            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword'))[0]])
         elif L == 'id' or L == 'indonesia' or L == 'indonesian':
             lemmatizer = Indonesian()
-            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_noise.txt'))[0]])
+            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_noise'))[0]])
         else:
             print('Warning! Languange not recognized. Empty stopword given')
             stops = set(); lemmatizer = None
     else:
         if L == 'en' or L == 'english' or L == 'inggris':
             lemmatizer = WordNetLemmatizer()
-            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_en.txt'))[0]])
+            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_en'))[0]])
         elif L == 'id' or L == 'indonesia' or L == 'indonesian':
             lemmatizer = Indonesian()
-            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword_id.txt'))[0]])
+            stops = set([t.strip() for t in LoadDocuments(file = of.openfile(path = './NLP_Models/stopword'))[0]])
         else:
             print('Warning! Languange not recognized. Empty stopword given')
             stops = set(); lemmatizer = None
@@ -170,3 +200,10 @@ def handlingnegation (text):
             kata = text.replace(' '.join(match[i]), str(match[i][0])+' '+'negx'+str(match[i][1]))
             text = kata
     return text
+
+def print_Topics(model, feature_names, Top_Topics, n_top_words):
+    for topic_idx, topic in enumerate(model.components_[:Top_Topics]):
+        print("Topic #%d:" %(topic_idx+1))
+        print(" ".join([feature_names[i]
+                        for i in topic.argsort()[:-n_top_words - 1:-1]]))
+
